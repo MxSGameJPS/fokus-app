@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Fokus",
-    "slug": "fokus",
+    "name": "FokusApp",
+    "slug": "fokusApp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,7 +17,7 @@
         "backgroundColor": "#021123"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.saulopavanello.fokus",
+      "package": "com.mxsgamejps.fokusApp",
       "versionCode": 1,
       "permissions": []
     },
@@ -44,7 +44,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "0085f348-219c-445b-a762-665fcfdad315"
+        "projectId": "31285c05-bef4-412e-a735-09610b66347e"
       }
     }
   }
