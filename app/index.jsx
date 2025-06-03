@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { StyleSheet, Text, View, Image, Pressable } from "react-native";
+import { useRef, useState } from "react";
+import { StyleSheet, Text, View, Image } from "react-native";
 import FokusButton from "../components/FokusButton";
 import ActionButton from "./../components/ActionButton/index";
 import Timer from "./../components/Timer/index";
+import { PauseIcon, PlayIcon } from './../components/Icons/index';
 
 const pomodoro = [
   {
@@ -27,6 +28,43 @@ const pomodoro = [
 
 export default function Index() {
   const [timerType, setTimerType] = useState(pomodoro[0]);
+  const [timerSeconds, setTimerSeconds] = useState(pomodoro[0].initialValue);
+  const [timerRunning, setTimerRunning] = useState(false);
+
+  const timerRef = useRef(null);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+      setTimerRunning(false);
+    }
+  };
+
+  const toggleTimerType = (newTimerType) => {
+    setTimerType(newTimerType);
+    setTimerSeconds(newTimerType.initialValue);
+    clearTimer();
+  };
+
+  function toggleTimer() {
+    if (timerRef.current) {
+      clearTimer();
+      return;
+    }
+
+    setTimerRunning(true);
+    const id = setInterval(() => {
+      setTimerSeconds(oldState => {
+        if (oldState <= 0) {
+          clearTimer();
+          return timerType.initialValue; 
+        }
+        return oldState - 1;
+      });
+    }, 1000);
+    timerRef.current = id;
+  }
 
   return (
     <View style={styles.container}>
@@ -37,14 +75,18 @@ export default function Index() {
             <ActionButton
               key={p.id}
               active={timerType.id === p.id}
-              onPress={() => setTimerType(p)}
+              onPress={() => toggleTimerType(p)}
               display={p.display}
             />
           ))}
           ;
         </View>
-        <Timer totalSeconds={timerType.initialValue} />
-        <FokusButton />
+        <Timer totalSeconds={timerSeconds} />
+        <FokusButton
+          title={timerRunning ? "Pausar" : "Começar"}
+          icon={timerRunning ? <PauseIcon /> : <PlayIcon />}
+          onPress={toggleTimer}
+        />
       </View>
       <View style={styles.footer}>
         <Text style={styles.footerText}>Desenvolvido por Saulo Pavanello</Text>
