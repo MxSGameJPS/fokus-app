@@ -1,25 +1,50 @@
+import { useState } from "react";
 import { StyleSheet, Text, View, Image, Pressable } from "react-native";
+import FokusButton from "../components/FokusButton";
+import ActionButton from "./../components/ActionButton/index";
+import Timer from "./../components/Timer/index";
+
+const pomodoro = [
+  {
+    id: "focus",
+    initialValue: 25 * 60, // 25 minutes in seconds
+    image: require("./pomodoro.png"),
+    display: "Foco",
+  },
+  {
+    id: "short",
+    initialValue: 5 * 60, // 5 minutes in seconds
+    image: require("./curto.png"),
+    display: "Pausa Curta",
+  },
+  {
+    id: "long",
+    initialValue: 15 * 60, // 15 minutes in seconds
+    image: require("./longo.png"),
+    display: "Pausa Longa",
+  },
+];
 
 export default function Index() {
+  const [timerType, setTimerType] = useState(pomodoro[0]);
+
   return (
     <View style={styles.container}>
-      <Image style={styles.image} source={require("./pomodoro.png")} />
+      <Image style={styles.image} source={timerType.image} />
       <View style={styles.actions}>
-        <View>
-          <Pressable>
-            <Text>Foco</Text>
-          </Pressable>
-          <Pressable>
-            <Text>Pausa Curta</Text>
-          </Pressable>
-          <Pressable>
-            <Text>Pausa Longa</Text>
-          </Pressable>
+        <View style={styles.context}>
+          {pomodoro.map((p) => (
+            <ActionButton
+              key={p.id}
+              active={timerType.id === p.id}
+              onPress={() => setTimerType(p)}
+              display={p.display}
+            />
+          ))}
+          ;
         </View>
-        <Text style={styles.time}>25:00</Text>
-        <Pressable style={styles.button}>
-          <Text style={styles.buttonText}>Começar</Text>
-        </Pressable>
+        <Timer totalSeconds={timerType.initialValue} />
+        <FokusButton />
       </View>
       <View style={styles.footer}>
         <Text style={styles.footerText}>Desenvolvido por Saulo Pavanello</Text>
@@ -49,23 +74,6 @@ const styles = StyleSheet.create({
     borderColor: "#144480",
     gap: 32,
   },
-  time: {
-    fontSize: 54,
-    color: "#fff",
-    textAlign: "center",
-    fontWeight: 600,
-  },
-  button: {
-    backgroundColor: "#B872FF",
-    padding: 8,
-    borderRadius: 32,
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "#021123",
-    fontSize: 18,
-    fontWeight: 600,
-  },
   footer: {
     width: "80%",
   },
@@ -74,5 +82,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 13,
     fontWeight: 400,
+  },
+  context: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
   },
 });
