@@ -3,6 +3,8 @@ import { Image, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import FokusButton from "../components/FokusButton/index";
 import { router } from "expo-router";
 
+
+
 export default function Home() {
   return (
     <SafeAreaView style={style.container}>
@@ -92,3 +94,4 @@ const style = StyleSheet.create({
     fontWeight: "400",
   },
 });
+

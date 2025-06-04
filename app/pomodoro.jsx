@@ -1,9 +1,30 @@
-import { useRef, useState } from "react";
-import { StyleSheet, Text, View, Image } from "react-native";
+import { useRef, useState, useEffect } from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  Vibration,
+  Platform,
+} from "react-native";
 import FokusButton from "../components/FokusButton";
 import ActionButton from "./../components/ActionButton/index";
 import Timer from "./../components/Timer/index";
-import { PauseIcon, PlayIcon } from './../components/Icons/index';
+import { PauseIcon, PlayIcon } from "./../components/Icons/index";
+// TODO: Migrar para expo-audio quando estiver mais estável
+// Atualmente mantendo expo-av apesar do aviso de depreciação no SDK 54
+import { Audio } from "expo-av";
+import * as Notifications from "expo-notifications";
+import * as Haptics from "expo-haptics";
+
+// Alterar a configuração do NotificationHandler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const pomodoro = [
   {
@@ -30,8 +51,97 @@ export default function Pomodoro() {
   const [timerType, setTimerType] = useState(pomodoro[0]);
   const [timerSeconds, setTimerSeconds] = useState(pomodoro[0].initialValue);
   const [timerRunning, setTimerRunning] = useState(false);
+  const startSound = useRef(null);
+  const endSound = useRef(null);
 
   const timerRef = useRef(null);
+  useEffect(() => {
+    async function loadSounds() {
+      const { sound: start } = await Audio.Sound.createAsync(
+        require("../assets/sounds/play.mp3")
+      );
+      startSound.current = start;
+
+      const { sound: end } = await Audio.Sound.createAsync(
+        require("../assets/sounds/grito.mp3")
+      );
+      endSound.current = end;
+    }
+
+    loadSounds();
+
+    // Limpar recursos ao desmontar
+    return () => {
+      if (startSound.current) {
+        startSound.current.unloadAsync();
+      }
+      if (endSound.current) {
+        endSound.current.unloadAsync();
+      }
+    };
+  }, []);
+  // Pedir permissões para notificações
+  useEffect(() => {
+    async function requestPermissions() {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== "granted") {
+        console.log("Permissão para notificações não concedida!");
+      }
+    }
+
+    requestPermissions();
+
+    // Criar canal de notificação para Android
+    if (Platform.OS === "android") {
+      Notifications.setNotificationChannelAsync("timer", {
+        name: "Timer Notifications",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        sound: true,
+      });
+    }
+  }, []);
+  // Função para reproduzir o som de início
+  const iniciar = async () => {
+    // Tocar som de início
+    try {
+      if (startSound.current) {
+        await startSound.current.replayAsync();
+      }
+    } catch (error) {
+      console.error("Erro ao reproduzir som de início:", error);
+    }
+  }; // Função para quando o tempo acabar
+  const tempoAcabou = async () => {
+    // Tocar som de término
+    try {
+      if (endSound.current) {
+        await endSound.current.replayAsync();
+      }
+    } catch (error) {
+      console.error("Erro ao reproduzir som de término:", error);
+    } // Adicionar vibração para feedback tátil
+    if (Platform.OS === "android") {
+      Vibration.vibrate(500);
+    } else {
+      // Para iOS, usar Haptics para feedback
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (_) {
+        console.log("Haptics não suportado");
+      }
+    } // Enviar notificação
+    await Notifications.presentNotificationAsync({
+      title: "Fokus App",
+      body: `Seu tempo de ${
+        timerType.id === "focus" ? "foco" : "pausa"
+      } terminou!`,
+      sound: true,
+      android: {
+        channelId: "timer",
+      },
+    });
+  };
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -46,19 +156,22 @@ export default function Pomodoro() {
     setTimerSeconds(newTimerType.initialValue);
     clearTimer();
   };
-
   function toggleTimer() {
     if (timerRef.current) {
       clearTimer();
       return;
     }
 
+    iniciar(); // Chama a função iniciar que reproduz o som de início
     setTimerRunning(true);
+
     const id = setInterval(() => {
-      setTimerSeconds(oldState => {
-        if (oldState <= 0) {
+      setTimerSeconds((oldState) => {
+        if (oldState <= 1) {
+          // Mudado para 1 para garantir que o timer acabe corretamente
           clearTimer();
-          return timerType.initialValue; 
+          tempoAcabou(); // Chama a função quando o tempo acabar
+          return timerType.initialValue;
         }
         return oldState - 1;
       });

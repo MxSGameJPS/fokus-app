@@ -2,7 +2,7 @@
   "expo": {
     "name": "FokusApp",
     "slug": "fokusApp",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "fokus",
@@ -18,8 +18,11 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mxsgamejps.fokusApp",
-      "versionCode": 1,
-      "permissions": []
+      "versionCode": 2,
+      "permissions": [
+        "NOTIFICATIONS",
+        "VIBRATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +39,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#021123"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true
