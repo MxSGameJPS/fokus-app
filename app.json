@@ -2,7 +2,7 @@
   "expo": {
     "name": "FokusApp",
     "slug": "fokusApp",
-    "version": "2.0.0",
+    "version": "3.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "fokus",
@@ -18,7 +18,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mxsgamejps.fokusApp",
-      "versionCode": 2,
+      "versionCode": 7,
       "permissions": [
         "NOTIFICATIONS",
         "VIBRATE"
