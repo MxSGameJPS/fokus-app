@@ -38,8 +38,8 @@ export const IconEdit = () => {
   return (
     <Svg
       xmlns="http://www.w3.org/2000/svg"
-      width="32"
-      height="32"
+      width="22"
+      height="22"
       viewBox="0 0 32 32"
       fill="none"
     >
@@ -55,8 +55,8 @@ export const IconDelete = () => {
   return (
     <Svg
       xmlns="http://www.w3.org/2000/svg"
-      width="28"
-      height="25"
+      width="20"
+      height="20"
       viewBox="0 0 10 12"
       fill="none"
     >
@@ -133,3 +133,59 @@ export const IconCheck = ({ checked }) => {
     </Svg>
   );
 };
+
+export function MusicIcon() {
+  return (
+    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <Path 
+        d="M9 18V5L21 3V16" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+      <Path 
+        d="M6 21C7.66 21 9 19.66 9 18C9 16.34 7.66 15 6 15C4.34 15 3 16.34 3 18C3 19.66 4.34 21 6 21Z" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+      <Path 
+        d="M18 19C19.66 19 21 17.66 21 16C21 14.34 19.66 13 18 13C16.34 13 15 14.34 15 16C15 17.66 16.34 19 18 19Z" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+    </Svg>
+  );
+}
+
+export function PauseCircleIcon() {
+  return (
+    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <Path 
+        d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+      <Path 
+        d="M10 15V9" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+      <Path 
+        d="M14 15V9" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+    </Svg>
+  );
+}

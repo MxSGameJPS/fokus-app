@@ -1,7 +1,8 @@
 import { useLocalSearchParams, router } from "expo-router";
-import { Text, TextInput, View, StyleSheet, Pressable } from "react-native";
+import { Text, TextInput, View, StyleSheet, Pressable, KeyboardAvoidingView } from "react-native";
 import { useState, useEffect } from "react";
 import useTaskContext from "../../components/context/useTaskContext";
+import { Platform } from "react-native";
 
 export default function EditTask() {
   const { id } = useLocalSearchParams()
@@ -11,21 +12,26 @@ export default function EditTask() {
 
     const task = tasks.find(t => t.id === numericId);
   const [taskText, setTaskText] = useState('');
+  const [diasText, setDiasText] = useState('');
+  const [tempoText, setTempoText] = useState('');
 
   useEffect(() => {
     if (task) {
-      setTaskText(task.task)
+      setTaskText(task.task || '');
+      setDiasText(task.dias || '');
+      // Convertendo para string para garantir que apareça no input
+      setTempoText(task.tempo ? String(task.tempo) : '');
     }
   }, [task])
 
   const handleSave = () => {
     if (!taskText) return
-    updateTask(numericId, taskText)
+    updateTask(numericId, taskText, diasText, tempoText)
     router.navigate('/tasks')
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <Text style={styles.title}>Editar tarefa:</Text>
       <TextInput
         style={styles.input}
@@ -33,10 +39,20 @@ export default function EditTask() {
         onChangeText={setTaskText}
         multiline
       />
+      <TextInput
+        style={styles.input}
+        value={diasText}
+        onChangeText={setDiasText}
+      />
+      <TextInput
+        style={styles.input}
+        value={tempoText}
+        onChangeText={setTempoText}
+      />
       <Pressable style={styles.button} onPress={handleSave}>
         <Text style={styles.buttonText}>Salvar</Text>
       </Pressable>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

@@ -1,0 +1,492 @@
+import { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  ActivityIndicator,
+} from "react-native";
+import { MusicIcon, PauseCircleIcon } from "../Icons";
+import * as WebBrowser from "expo-web-browser";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Registrar o WebBrowser para autenticação com opções específicas
+WebBrowser.maybeCompleteAuthSession({
+  preferEphemeralSession: true, // Usar sessão efêmera para evitar problemas de cache
+});
+
+// Constantes
+const CLIENT_ID = "88da5d41ee2d4156a63d5ff218694802";
+// Usando múltiplos esquemas de redirecionamento para aumentar a compatibilidade
+const REDIRECT_URI = "exp://10.0.2.2:8083"; // Para emuladores Android
+// Se precisar de mais esquemas:
+// const REDIRECT_URI_LOCAL = "exp://192.168.2.109:8083"; // Para dispositivos físicos na mesma rede
+// const REDIRECT_URI_EXPO_GO = "exp://exp.host/@seuusuario/fokus-app"; // Para Expo Go
+const SPOTIFY_AUTH_ENDPOINT = "https://accounts.spotify.com/authorize";
+const SPOTIFY_API_ENDPOINT = "https://api.spotify.com/v1";
+const TOKEN_STORAGE_KEY = "@fokus:spotify_token";
+
+export default function SpotifyTopTracksButton() {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [playlists, setPlaylists] = useState([]);
+  const [error, setError] = useState(null);
+  const [currentPlaylist, setCurrentPlaylist] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
+
+  // Verificar token ao iniciar o componente
+  useEffect(() => {
+    const checkToken = async () => {
+      try {
+        const savedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+        if (savedToken) {
+          setAccessToken(savedToken);
+          console.log("Token do Spotify recuperado com sucesso");
+
+          // Opcional: verificar se o token ainda é válido
+          const response = await fetch(`${SPOTIFY_API_ENDPOINT}/me`, {
+            headers: { Authorization: `Bearer ${savedToken}` },
+          });
+
+          if (!response.ok) {
+            console.log("Token expirado, removendo");
+            await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+            setAccessToken(null);
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao verificar token do Spotify:", error);
+      }
+    };
+
+    checkToken();
+  }, []);
+
+  // Autenticar com o Spotify
+  async function authenticate() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log(
+        "Iniciando autenticação Spotify com URL de redirecionamento:",
+        REDIRECT_URI
+      );
+
+      // Verificar se já temos um token salvo
+      const savedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+      if (savedToken) {
+        setAccessToken(savedToken);
+        await fetchFocusPlaylists(savedToken);
+        return;
+      }
+
+      // Gerar URL de autenticação
+      const queryParams = new URLSearchParams({
+        client_id: CLIENT_ID,
+        response_type: "token",
+        redirect_uri: REDIRECT_URI,
+        scope:
+          "user-read-private user-read-email playlist-read-private user-modify-playback-state",
+        show_dialog: true,
+      });
+
+      const authUrl = `${SPOTIFY_AUTH_ENDPOINT}?${queryParams.toString()}`;
+
+      // Iniciar fluxo de autenticação com WebBrowser
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        REDIRECT_URI,
+        {
+          showInRecents: true,
+          createTask: false,
+        }
+      );
+
+      console.log("Resultado WebBrowser:", result.type);
+
+      if (result.type === "success") {
+        // Extrair o token de acesso da URL de redirecionamento
+        const { url } = result;
+        console.log("URL de retorno:", url);
+
+        if (url.includes("error=")) {
+          const errorMsg = url.split("error=")[1].split("&")[0];
+          throw new Error(
+            `Erro de autenticação Spotify: ${decodeURIComponent(errorMsg)}`
+          );
+        }
+
+        if (!url.includes("access_token=")) {
+          throw new Error("Token de acesso não encontrado na URL de retorno");
+        }
+
+        const accessToken = url.split("#access_token=")[1].split("&")[0];
+
+        // Salvar o token para uso futuro
+        await AsyncStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+        setAccessToken(accessToken);
+
+        // Buscar playlists de foco
+        await fetchFocusPlaylists(accessToken);
+      } else {
+        setError("Autenticação cancelada ou falhou");
+      }
+    } catch (err) {
+      console.error("Erro na autenticação:", err);
+      setError(`Erro na autenticação: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Buscar playlists de foco
+  async function fetchFocusPlaylists(token) {
+    try {
+      // Primeiro, buscar categoria de foco
+      const categoryResponse = await fetch(
+        `${SPOTIFY_API_ENDPOINT}/browse/categories/focus`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!categoryResponse.ok) {
+        if (categoryResponse.status === 401) {
+          // Token expirado, tentar renovar
+          await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+          setAccessToken(null);
+          throw new Error("Sessão expirada. Por favor, faça login novamente.");
+        }
+        throw new Error("Categoria de foco não encontrada");
+      }
+
+      // Depois, buscar playlists da categoria
+      const playlistsResponse = await fetch(
+        `${SPOTIFY_API_ENDPOINT}/browse/categories/focus/playlists?limit=10`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!playlistsResponse.ok) {
+        throw new Error("Não foi possível carregar as playlists");
+      }
+
+      const data = await playlistsResponse.json();
+      setPlaylists(data.playlists?.items || []);
+      setModalVisible(true);
+    } catch (err) {
+      setError(`Erro ao carregar playlists: ${err.message}`);
+    }
+  }
+
+  // Reproduzir playlist
+  async function playPlaylist(playlist) {
+    if (!accessToken) {
+      setError("Não há token de acesso. Faça login novamente.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Verificar dispositivos disponíveis
+      const deviceResponse = await fetch(
+        `${SPOTIFY_API_ENDPOINT}/me/player/devices`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!deviceResponse.ok) {
+        if (deviceResponse.status === 401) {
+          // Token expirado
+          await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+          setAccessToken(null);
+          throw new Error("Sessão expirada. Por favor, faça login novamente.");
+        }
+        throw new Error("Não foi possível verificar dispositivos");
+      }
+
+      const devicesData = await deviceResponse.json();
+
+      if (!devicesData.devices || devicesData.devices.length === 0) {
+        throw new Error(
+          "Nenhum dispositivo Spotify ativo encontrado. Abra o Spotify em um dispositivo primeiro."
+        );
+      }
+
+      // Iniciar reprodução
+      const playResponse = await fetch(
+        `${SPOTIFY_API_ENDPOINT}/me/player/play`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            context_uri: playlist.uri,
+          }),
+        }
+      );
+
+      if (!playResponse.ok) {
+        if (playResponse.status === 404) {
+          throw new Error(
+            "Nenhum player ativo encontrado. Inicie uma reprodução no Spotify primeiro."
+          );
+        }
+        throw new Error("Não foi possível iniciar a reprodução");
+      }
+
+      setCurrentPlaylist(playlist);
+      setModalVisible(false);
+    } catch (err) {
+      setError(`Erro ao reproduzir: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Pausar a reprodução
+  async function pausePlayback() {
+    if (!accessToken) {
+      setError("Não há token de acesso. Faça login novamente.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${SPOTIFY_API_ENDPOINT}/me/player/pause`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token expirado
+          await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+          setAccessToken(null);
+          throw new Error("Sessão expirada. Por favor, faça login novamente.");
+        }
+        throw new Error("Não foi possível pausar a reprodução");
+      }
+
+      setCurrentPlaylist(null);
+    } catch (err) {
+      setError(`Erro ao pausar: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Renderizar item da playlist
+  const renderPlaylistItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.playlistItem}
+      onPress={() => playPlaylist(item)}
+    >
+      {item.images && item.images[0] && (
+        <Image
+          source={{ uri: item.images[0].url }}
+          style={styles.playlistImage}
+        />
+      )}
+      <View style={styles.playlistInfo}>
+        <Text style={styles.playlistName}>{item.name}</Text>
+        <Text style={styles.playlistDesc} numberOfLines={1}>
+          {item.description || `Por ${item.owner?.display_name || "Spotify"}`}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  function handlePress() {
+    console.log("Botão do Spotify pressionado");
+    if (currentPlaylist) {
+      console.log("Tentando pausar playback");
+      pausePlayback();
+    } else {
+      console.log("Tentando iniciar autenticação");
+      authenticate();
+    }
+  }
+
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.spotifyButton}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        {currentPlaylist ? <PauseCircleIcon /> : <MusicIcon />}
+        <Text style={styles.buttonText}>
+          {currentPlaylist ? `Pausar: ${currentPlaylist.name}` : "Tocar Música"}
+        </Text>
+      </TouchableOpacity>
+
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Playlists para Foco</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.closeButtonText}>X</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#1DB954" />
+                <Text style={styles.loadingText}>Carregando playlists...</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={authenticate}
+                >
+                  <Text style={styles.retryText}>Tentar novamente</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                data={playlists}
+                keyExtractor={(item) => item.id}
+                renderItem={renderPlaylistItem}
+                contentContainerStyle={styles.listContainer}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  spotifyButton: {
+    backgroundColor: "#1DB954", // Cor do Spotify
+    padding: 12,
+    borderRadius: 32,
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "center",
+    width: "100%",
+  },
+  buttonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+  },
+  modalContent: {
+    width: "90%",
+    maxHeight: "80%",
+    backgroundColor: "#021123",
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#144480",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#144480",
+  },
+  title: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  loadingText: {
+    color: "#fff",
+    marginTop: 16,
+  },
+  errorContainer: {
+    padding: 24,
+    alignItems: "center",
+  },
+  errorText: {
+    color: "#ff6b6b",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: "#144480",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+  listContainer: {
+    padding: 16,
+  },
+  playlistItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: "#144480",
+  },
+  playlistImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 4,
+    marginRight: 12,
+  },
+  playlistInfo: {
+    flex: 1,
+  },
+  playlistName: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  playlistDesc: {
+    color: "#98A0A8",
+    fontSize: 14,
+  },
+});

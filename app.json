@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["fetch", "processing", "remote-notification"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +24,9 @@
       "versionCode": 7,
       "permissions": [
         "NOTIFICATIONS",
-        "VIBRATE"
+        "VIBRATE",
+        "FOREGROUND_SERVICE",
+        "RECEIVE_BOOT_COMPLETED"
       ]
     },
     "web": {
@@ -40,7 +45,17 @@
           "backgroundColor": "#021123"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/adaptive-icon.png",
+          "color": "#144480",
+          "sounds": ["./assets/sounds/play.mp3", "./assets/sounds/grito.mp3"]
+        }
+      ],
+      "expo-background-fetch",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

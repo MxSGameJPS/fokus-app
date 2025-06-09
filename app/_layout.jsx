@@ -48,14 +48,22 @@ export default function Layout() {
               title: "",
               drawerLabel: "Adicionar Tarefa",
             }}
-          />
+          />{" "}
           <Drawer.Screen
             name="edit-task/[id]"
             options={{
               title: "",
               drawerLabel: "Editar Tarefa",
               headerShown: false,
-              drawerItemStyle: { display: "none" },            
+              drawerItemStyle: { display: "none" },
+            }}
+          />
+          <Drawer.Screen
+            name="index"
+            options={{
+              title: "Início",
+              headerShown: false,
+              drawerItemStyle: { display: "none" },
             }}
           />
         </Drawer>

@@ -37,13 +37,16 @@ export function TaskProvider({ children }) {
     }
   }, [tasks]);
 
-  function addTask(task) {
+  function addTask(text, dias, tempoFoco) {
     setTasks((oldState) => {
       return [
         ...oldState,
         {
-          task,
+          task: text,
+          dias: dias,
+          tempo: tempoFoco,
           id: oldState.length + 1,
+          completed: false,
         },
       ];
     });
@@ -64,11 +67,11 @@ export function TaskProvider({ children }) {
     setTasks((oldState) => oldState.filter((task) => task.id !== Id));
   }
 
-  const updateTask = (id, newText) => {
+  const updateTask = (id, newText, newDias, newTempo) => {
   setTasks(oldState =>
     oldState.map(t => {
       if (t.id === id) {
-        return { ...t, task: newText }
+        return { ...t, task: newText, dias: newDias, tempo: newTempo }
       }
       return t
     })
