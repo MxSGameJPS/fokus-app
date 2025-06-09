@@ -78,10 +78,8 @@ export default function PlayerMusica({
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         staysActiveInBackground: true,
-        interruptionModeIOS: Audio.InterruptionModeIOS.DuckOthers,
         playsInSilentModeIOS: true,
         shouldDuckAndroid: true,
-        interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
         playThroughEarpieceAndroid: false,
       });
       console.log("Áudio configurado com sucesso");
@@ -376,7 +374,9 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
-    backgroundColor: "#144480",
+    backgroundColor: "#041832",
+    borderWidth: 2,
+    borderColor: "#144480",
   },
   selectedMusicaItem: {
     backgroundColor: "#1E5B9F",
@@ -419,12 +419,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#144480",
+    backgroundColor: "#041832",
+    borderWidth: 2,
+    borderColor: "#144480",
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#1DB954",
   },
   playerInfo: {
     flex: 1,
