@@ -2,7 +2,7 @@
   "expo": {
     "name": "FokusApp",
     "slug": "fokusApp",
-    "version": "3.0.1",
+    "version": "4.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "fokus",
@@ -21,12 +21,14 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mxsgamejps.fokusApp",
-      "versionCode": 7,
+      "versionCode": 8,
       "permissions": [
         "NOTIFICATIONS",
         "VIBRATE",
         "FOREGROUND_SERVICE",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "FOREGROUND_SERVICE",
+        "WAKE_LOCK"
       ]
     },
     "web": {
@@ -51,6 +53,7 @@
         {
           "icon": "./assets/images/adaptive-icon.png",
           "color": "#144480",
+          "microphonePermission": false,
           "sounds": ["./assets/sounds/play.mp3", "./assets/sounds/grito.mp3"]
         }
       ],

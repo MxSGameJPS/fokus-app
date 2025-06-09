@@ -7,6 +7,9 @@ import {
   Vibration,
   Platform,
   AppState,
+  ScrollView,
+  Modal,
+  TouchableOpacity,
 } from "react-native";
 import FokusButton from "../components/FokusButton";
 import ActionButton from "./../components/ActionButton/index";
@@ -18,7 +21,7 @@ import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
-import BotaoMusica from "../components/botaoMusica";
+import PlayerMusica from "../components/botaoMusica";
 
 // Nome da tarefa em background
 const BACKGROUND_TIMER_TASK = "background-timer-task";
@@ -49,8 +52,6 @@ export default function Pomodoro() {
   const tempoPersonalizado = params.tempoPersonalizado;
   const nomeTarefa = params.nomeTarefa;
   const autoStart = params.autoStart === "true";
-
-  console.log("Tela de Pomodoro carregada");
 
   // Tempo personalizado em segundos (ou valor padrão de 25 minutos)
   const focoTime = tempoPersonalizado
@@ -85,6 +86,10 @@ export default function Pomodoro() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [pomodoroInitialized, setPomodoroInitialized] = useState(false);
   const [notificationId, setNotificationId] = useState(null);
+  const [musicaModalVisible, setMusicaModalVisible] = useState(false);
+  const [sound, setSound] = useState(null);
+  const [currentMusica, setCurrentMusica] = useState(null);
+  const [playing, setPlaying] = useState(false);
 
   // Referências para manter valores entre renderizações
   const startSound = useRef(null);
@@ -97,13 +102,18 @@ export default function Pomodoro() {
   const previousTempoRef = useRef(tempoPersonalizado);
   const previousTarefaRef = useRef(nomeTarefa);
 
+  // Função para controlar o áudio quando o modal for fechado
+  const handleCloseModal = () => {
+    // Apenas fechar o modal, sem afetar a reprodução de áudio
+    setMusicaModalVisible(false);
+  };
+
   // Criar canais de notificação para Android no início - evita problemas de inicialização tardia
   useEffect(() => {
     // Pedir permissões para notificações
     async function setupNotifications() {
       try {
         const { status } = await Notifications.requestPermissionsAsync();
-        console.log("Status das permissões de notificação:", status);
 
         // Criar canais apenas se tivermos permissão
         if (status === "granted" && Platform.OS === "android") {
@@ -114,7 +124,6 @@ export default function Pomodoro() {
             vibrationPattern: [0, 250, 250, 250],
             sound: true,
           });
-          console.log("Canal timer criado");
 
           // Canal específico para notificações persistentes
           await Notifications.setNotificationChannelAsync("timer-running", {
@@ -128,7 +137,6 @@ export default function Pomodoro() {
             lockscreenVisibility:
               Notifications.AndroidNotificationVisibility.PUBLIC,
           });
-          console.log("Canal timer-running criado");
         }
       } catch (error) {
         console.error("Erro ao configurar notificações:", error);
@@ -151,15 +159,11 @@ export default function Pomodoro() {
   // Monitorar mudanças no estado do aplicativo (ativo, em background, inativo)
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      console.log("App state changed to:", nextAppState);
-      console.log("Previous state was:", appStateRef.current);
-
       if (
         appStateRef.current === "active" &&
         nextAppState.match(/inactive|background/)
       ) {
         // App está indo para o background
-        console.log("App indo para background, timer running:", timerRunning);
         if (timerRunning) {
           // Salvar o tempo atual para cálculo correto ao retornar
           startTimeRef.current = {
@@ -177,7 +181,6 @@ export default function Pomodoro() {
         nextAppState === "active"
       ) {
         // App está voltando para o primeiro plano
-        console.log("App voltando para primeiro plano");
         if (timerRunning && startTimeRef.current) {
           // Calcular quanto tempo passou enquanto estava em background
           const elapsedSeconds = Math.floor(
@@ -187,13 +190,6 @@ export default function Pomodoro() {
             0,
             startTimeRef.current.remainingSeconds - elapsedSeconds
           );
-
-          console.log(
-            "Tempo decorrido em background:",
-            elapsedSeconds,
-            "segundos"
-          );
-          console.log("Novo tempo do timer:", newSeconds);
 
           // Atualizar o timer
           setTimerSeconds(newSeconds);
@@ -296,7 +292,6 @@ export default function Pomodoro() {
         stopOnTerminate: true, // Parar quando o app for fechado completamente
         startOnBoot: false, // Não iniciar automaticamente após reinicialização do dispositivo
       });
-      console.log("Tarefa em background registrada com sucesso");
     } catch (err) {
       console.error("Erro ao registrar tarefa em background:", err);
     }
@@ -306,7 +301,6 @@ export default function Pomodoro() {
   async function unregisterBackgroundTask() {
     try {
       await BackgroundFetch.unregisterTaskAsync(BACKGROUND_TIMER_TASK);
-      console.log("Tarefa em background desregistrada");
     } catch (err) {
       console.error("Erro ao desregistrar tarefa em background:", err);
     }
@@ -344,8 +338,6 @@ export default function Pomodoro() {
         ? `Trabalhando em: ${nomeTarefa} (término às ${formattedEndTime})`
         : `Timer ativo! Término previsto às ${formattedEndTime}`;
 
-      console.log("Criando notificação simples:", title, body);
-
       // Primeiro remover qualquer notificação existente
       await removeTimerNotification();
 
@@ -364,8 +356,6 @@ export default function Pomodoro() {
         },
         trigger: null, // Exibir imediatamente
       });
-
-      console.log("Notificação criada com ID:", id);
       setNotificationId(id);
 
       return id;
@@ -382,8 +372,6 @@ export default function Pomodoro() {
         return;
       }
 
-      console.log("Atualizando notificação com", seconds, "segundos restantes");
-
       // Criar nova notificação (implicitamente remove a anterior)
       await createTimerNotification(seconds);
     } catch (error) {
@@ -395,7 +383,6 @@ export default function Pomodoro() {
   async function removeTimerNotification() {
     if (notificationId) {
       try {
-        console.log("Removendo notificação ID:", notificationId);
         await Notifications.dismissNotificationAsync(notificationId);
         setNotificationId(null);
       } catch (error) {
@@ -512,7 +499,6 @@ export default function Pomodoro() {
         },
         trigger: null, // Exibir imediatamente
       });
-      console.log("Notificação de conclusão criada:", notifId);
     } catch (error) {
       console.error("Erro ao criar notificação de conclusão:", error);
     }
@@ -551,39 +537,122 @@ export default function Pomodoro() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* Mostrar o nome da tarefa se fornecido */}
-      {nomeTarefa && <Text style={styles.taskName}>Tarefa: {nomeTarefa}</Text>}
-      <Image style={styles.image} source={timerType.image} />
-      <View style={styles.actions}>
-        <View style={styles.context}>
-          {pomodoro.map((p) => (
-            <ActionButton
-              key={p.id}
-              active={timerType.id === p.id}
-              onPress={() => toggleTimerType(p)}
-              display={p.display}
-            />
-          ))}
+    <ScrollView
+      contentContainerStyle={styles.scrollContainer}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.container}>
+        {/* Mostrar o nome da tarefa se fornecido */}
+        {nomeTarefa && (
+          <Text style={styles.taskName}>Tarefa: {nomeTarefa}</Text>
+        )}
+        <Image style={styles.image} source={timerType.image} />
+        <View style={styles.actions}>
+          <View style={styles.context}>
+            {pomodoro.map((p) => (
+              <ActionButton
+                key={p.id}
+                active={timerType.id === p.id}
+                onPress={() => toggleTimerType(p)}
+                display={p.display}
+              />
+            ))}
+          </View>
+          <Timer totalSeconds={timerSeconds} />
+          <FokusButton
+            title={timerRunning ? "Pausar" : "Começar"}
+            icon={timerRunning ? <PauseIcon /> : <PlayIcon />}
+            onPress={toggleTimer}
+          />
         </View>
-        <Timer totalSeconds={timerSeconds} />
-        <FokusButton
-          title={timerRunning ? "Pausar" : "Começar"}
-          icon={timerRunning ? <PauseIcon /> : <PlayIcon />}
-          onPress={toggleTimer}
-        />
+
+        {/* Botão para abrir o player de música */}
+        <TouchableOpacity
+          style={styles.musicaButton}
+          onPress={() => setMusicaModalVisible(true)}
+        >
+          <Text style={styles.musicaButtonText}>🎵 Música para Foco</Text>
+        </TouchableOpacity>
+
+        {/* Modal para o PlayerMusica */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={musicaModalVisible}
+          onRequestClose={handleCloseModal}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={handleCloseModal}
+              >
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+              <View style={styles.playerContainer}>
+                <PlayerMusica
+                  sound={sound}
+                  setSound={setSound}
+                  currentMusica={currentMusica}
+                  setCurrentMusica={setCurrentMusica}
+                  playing={playing}
+                  setPlaying={setPlaying}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Adicione um mini-player para mostrar quando o modal estiver fechado */}
+        {currentMusica && !musicaModalVisible && (
+          <TouchableOpacity
+            style={styles.miniPlayer}
+            onPress={() => setMusicaModalVisible(true)}
+          >
+            <View style={styles.miniPlayerInfo}>
+              <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+                {currentMusica.titulo || "Música"}
+              </Text>
+              <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+                {currentMusica.artista || "Artista"}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.miniPlayButton,
+                playing ? styles.miniPauseButton : null,
+              ]}
+              onPress={() => {
+                if (sound) {
+                  if (playing) {
+                    sound.pauseAsync();
+                  } else {
+                    sound.playAsync();
+                  }
+                  setPlaying(!playing);
+                }
+              }}
+            >
+              <Text style={styles.miniPlayButtonText}>
+                {playing ? "❚❚" : "▶"}
+              </Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Desenvolvido por</Text>
+          <Text style={styles.footerText}>Saulo Pavanello</Text>
+        </View>
       </View>
-      <View style={styles.spotifyContainer}>
-        <BotaoMusica />
-      </View>
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Desenvolvido por Saulo Pavanello</Text>
-      </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollContainer: {
+    flexGrow: 1,
+  },
   container: {
     flex: 1,
     justifyContent: "center",
@@ -630,9 +699,89 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     alignItems: "center",
   },
-  spotifyContainer: {
+  musicaButton: {
+    backgroundColor: "#144480",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
     width: "80%",
+    alignItems: "center",
+  },
+  musicaButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+  },
+  modalContent: {
+    width: "90%",
+    height: "80%",
+    backgroundColor: "#021123",
+    borderRadius: 15,
+    overflow: "hidden",
+    position: "relative",
+  },
+  closeButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    zIndex: 10,
+    backgroundColor: "#144480",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  closeButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  playerContainer: {
+    flex: 1,
+  },
+  miniPlayer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#144480",
+    padding: 12,
+    borderRadius: 10,
     marginTop: 10,
-    zIndex: 5, // Para garantir que esteja acima de outros elementos
+    width: "80%",
+  },
+  miniPlayerInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  miniPlayerTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  miniPlayerArtist: {
+    color: "#98A0A8",
+    fontSize: 12,
+  },
+  miniPlayButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#1DB954",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  miniPauseButton: {
+    backgroundColor: "#ff7700",
+  },
+  miniPlayButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "bold",
   },
 });

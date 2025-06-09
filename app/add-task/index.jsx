@@ -97,8 +97,7 @@ export default function AddTask() {
                 value={tempoFoco}
                 onChangeText={setTempoFoco}
               />
-              <View style={style.containerButtonB}>
-                {" "}
+              <View style={style.containerButtonB}>                
                 <Pressable style={style.containerButton} onPress={submitTask}>
                   <IconSave />
                   <Text style={style.buttonText}>Salvar</Text>

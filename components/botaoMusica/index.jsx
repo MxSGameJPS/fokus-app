@@ -1,408 +1,374 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  StyleSheet,
-  Modal,
-  FlatList,
   TouchableOpacity,
+  FlatList,
+  StyleSheet,
   ActivityIndicator,
-  InteractionManager,
+  Alert,
+  AppState,
 } from "react-native";
 import { Audio } from "expo-av";
-import { MusicIcon, PauseCircleIcon } from "../Icons";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "./firebase";
 
-const API_URL = "https://api-musicas-3af47.web.app/musicas";
-
-export default function BotaoMusica() {
+export default function PlayerMusica({
+  sound: externalSound,
+  setSound: setExternalSound,
+  currentMusica: externalCurrentMusica,
+  setCurrentMusica: setExternalCurrentMusica,
+  playing: externalPlaying,
+  setPlaying: setExternalPlaying,
+}) {
+  // Modifique os estados para usar os externos se fornecidos
   const [musicas, setMusicas] = useState([]);
-  const [currentMusica, setCurrentMusica] = useState(null);
-  const [sound, setSound] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [sound, setSound] = useState(externalSound);
+  const [currentMusica, setCurrentMusica] = useState(externalCurrentMusica);
+  const [playing, setPlaying] = useState(externalPlaying);
+  const [loading, setLoading] = useState(true);
+  const [loadingAudio, setLoadingAudio] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchMusicas = async () => {
+  const appState = useRef(AppState.currentState);
+  const soundRef = useRef(null);
+
+  useEffect(() => {
+    setupAudio();
+    carregarMusicas();
+
+    // Configurar listener para mudanças de estado do app
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        // App voltou ao primeiro plano
+        // Não reiniciar o áudio, apenas sincronizar o estado
+        syncPlaybackState();
+      }
+
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+      subscription.remove();
+    };
+  }, []);
+
+  // Função para sincronizar estado da reprodução
+  async function syncPlaybackState() {
+    if (sound) {
+      try {
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          setPlaying(status.isPlaying);
+        }
+      } catch (error) {
+        console.error("Erro ao sincronizar estado da reprodução:", error);
+      }
+    }
+  }
+
+  async function setupAudio() {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        interruptionModeIOS: Audio.InterruptionModeIOS.DuckOthers,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
+        playThroughEarpieceAndroid: false,
+      });
+      console.log("Áudio configurado com sucesso");
+    } catch (e) {
+      console.error("Erro ao configurar modo de áudio:", e);
+    }
+  }
+
+  async function carregarMusicas() {
     setLoading(true);
     setError(null);
+
     try {
-      const response = await fetch(API_URL);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      console.log("Tentando carregar músicas do Firebase...");
+      const musicasRef = collection(db, "musicas");
+      const snapshot = await getDocs(musicasRef);
+
+      if (snapshot.empty) {
+        console.log("Nenhuma música encontrada no Firebase");
+        setMusicas([]);
+      } else {
+        const lista = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        console.log(`${lista.length} músicas carregadas do Firebase`);
+        setMusicas(lista);
       }
-      const data = await response.json();
-      setMusicas(data);
     } catch (e) {
-      console.error("Failed to fetch music:", e);
-      setError(
-        e.message.includes("JSON Parse error")
-          ? "Erro ao processar os dados das músicas. Verifique o formato da API."
-          : `Falha ao carregar músicas: ${e.message}`
-      );
+      console.error("Erro ao carregar músicas do Firebase:", e);
+      setError(`Não foi possível carregar as músicas: ${e.message}`);
+      setMusicas([]);
     } finally {
       setLoading(false);
     }
+  }
+
+  // Função para atualizar os estados externos
+  const updateExternalState = (newSound, newCurrentMusica, isPlaying) => {
+    if (setExternalSound) setExternalSound(newSound);
+    if (setExternalCurrentMusica) setExternalCurrentMusica(newCurrentMusica);
+    if (setExternalPlaying) setExternalPlaying(isPlaying);
   };
 
-  useEffect(() => {
-    return sound
-      ? () => {
-          console.log("Unloading Sound");
-          sound.unloadAsync();
-        }
-      : undefined;
-  }, [sound]);
-
-  useEffect(() => {
-    if (modalVisible && musicas.length === 0 && !loading) {
-      fetchMusicas();
+  async function playSound(musica) {
+    if (!musica.url) {
+      Alert.alert("Erro", "URL da música não disponível");
+      return;
     }
-  }, [modalVisible, musicas.length, loading]); // Corrigido: Adicionado musicas.length e loading às dependências
 
-  const playSound = async (musica) => {
-    if (sound) {
-      await sound.unloadAsync();
-    }
-    setError(null); // Limpa erros anteriores ao tentar tocar uma nova música
+    setLoadingAudio(true);
+
     try {
-      // Busca a música específica usando o endpoint com ID para obter o URL com token de acesso
-      if (musica.id) {
-        setLoading(true);
-        try {
-          const musicaResponse = await fetch(`${API_URL}/${musica.id}`);
-          if (!musicaResponse.ok) {
-            throw new Error(`HTTP error! status: ${musicaResponse.status}`);
-          }
-          const musicaAtualizada = await musicaResponse.json();
-          if (
-            musicaAtualizada &&
-            (musicaAtualizada.url || musicaAtualizada.uri)
-          ) {
-            musica = musicaAtualizada; // Atualiza com os dados mais recentes, incluindo URL com token
-          }
-        } catch (fetchError) {
-          console.error("Erro ao buscar detalhes da música:", fetchError);
-          // Continua com os dados que já temos caso a busca específica falhe
-        } finally {
-          setLoading(false);
-        }
+      // Parar o som atual se estiver tocando
+      if (sound) {
+        await sound.unloadAsync();
+        setSound(null);
+        soundRef.current = null;
       }
 
-      console.log("Loading Sound for:", musica.url || musica.uri);
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: musica.url || musica.uri },
-        { shouldPlay: true }
+      // Converter o formato de URL para o formato correto do Firebase Storage
+      let urlFinal = musica.url;
+
+      // Se a URL estiver no formato armazenado do Firestore
+      if (
+        musica.url.includes(
+          "storage.googleapis.com/api-musicas-3af47.firebasestorage.app"
+        )
+      ) {
+        // Extrair o nome do arquivo
+        const urlPartes = musica.url.split("/");
+        const nomeArquivo = urlPartes[urlPartes.length - 1];
+
+        // Criar URL no formato direto do Firebase Storage
+        urlFinal = `https://firebasestorage.googleapis.com/v0/b/api-musicas-3af47.firebasestorage.app/o/${nomeArquivo}?alt=media`;
+      }
+
+      const { sound: novoSound } = await Audio.Sound.createAsync(
+        { uri: urlFinal },
+        {
+          shouldPlay: true,
+          staysActiveInBackground: true, // Garantir reprodução em segundo plano
+        },
+        onPlaybackStatusUpdate
       );
-      setSound(newSound);
+
+      setSound(novoSound);
+      soundRef.current = novoSound;
       setCurrentMusica(musica);
-      setIsPlaying(true);
-      setModalVisible(false);
+      setPlaying(true);
 
-      newSound.setOnPlaybackStatusUpdate(async (status) => {
-        if (status.didJustFinish) {
-          setIsPlaying(false);
-          await newSound.unloadAsync();
-          setSound(null);
-          setCurrentMusica(null);
-          console.log("Playback finished!");
-        } else if (status.error) {
-          console.error("Playback Error:", status.error);
-          setError(
-            `Erro ao tocar ${musica.titulo || musica.title || musica.name}: ${
-              status.error
-            }. Verifique o formato do áudio e a URL.`
-          );
-          setIsPlaying(false);
-          await newSound.unloadAsync();
-          setSound(null);
-          setCurrentMusica(null);
-        }
-      });
-    } catch (e) {
-      console.error("Error loading or playing sound:", e);
-      setError(
-        `Erro ao carregar a música ${
-          musica.titulo || musica.title || musica.name
-        }. Verifique a URL e o formato do arquivo. Detalhes: ${e.message}`
+      updateExternalState(novoSound, musica, true);
+    } catch (error) {
+      Alert.alert(
+        "Erro",
+        `Não foi possível reproduzir a música: ${error.message}`
       );
-      setIsPlaying(false);
-      setSound(null);
-      setCurrentMusica(null);
+    } finally {
+      setLoadingAudio(false);
     }
-  };
+  }
 
-  const handleButtonPress = async () => {
-    if (currentMusica) {
-      if (isPlaying && sound) {
-        await sound.pauseAsync();
-        setIsPlaying(false);
-      } else if (!isPlaying && sound) {
-        await sound.playAsync();
-        setIsPlaying(true);
+  function onPlaybackStatusUpdate(status) {
+    if (status.isLoaded) {
+      if (status.didJustFinish) {
+        setPlaying(false);
       } else {
-        // Caso currentMusica exista mas o som não (ex: após erro)
-        playSound(currentMusica);
+        // Atualizar estado de reprodução
+        setPlaying(status.isPlaying);
       }
-    } else {
-      if (musicas.length === 0 && !loading) {
-        await fetchMusicas(); // Garante que as músicas sejam buscadas se a lista estiver vazia
-      }
-      setModalVisible(true);
+    } else if (status.error) {
+      Alert.alert("Erro de reprodução", status.error);
     }
-  };
+  }
 
-  const playNextSong = async () => {
-    if (musicas.length === 0) return;
+  async function togglePlayPause() {
+    if (!sound || !currentMusica) return;
 
-    let currentIndex = -1;
-    if (currentMusica) {
-      currentIndex = musicas.findIndex(
-        (m) =>
-          (m.id && m.id === currentMusica.id) ||
-          (m.url && m.url === currentMusica.url)
+    try {
+      if (playing) {
+        await sound.pauseAsync();
+      } else {
+        await sound.playAsync();
+      }
+      setPlaying(!playing);
+      updateExternalState(sound, currentMusica, !playing);
+    } catch (error) {
+      Alert.alert(
+        "Erro",
+        `Problema ao controlar a reprodução: ${error.message}`
       );
     }
+  }
 
-    const nextIndex = (currentIndex + 1) % musicas.length;
-    const nextMusica = musicas[nextIndex];
+  // Adicione este useEffect após o primeiro useEffect
+  useEffect(() => {
+    // Atualizar estado interno quando as props externas mudarem
+    if (externalSound !== undefined) setSound(externalSound);
+    if (externalCurrentMusica !== undefined)
+      setCurrentMusica(externalCurrentMusica);
+    if (externalPlaying !== undefined) setPlaying(externalPlaying);
+  }, [externalSound, externalCurrentMusica, externalPlaying]);
 
-    if (nextMusica) {
-      await playSound(nextMusica);
-    }
-  };
-
-  const renderMusicaItem = ({ item }) => (
-    <TouchableOpacity style={styles.musicaItem} onPress={() => playSound(item)}>
-      {/* Adicionando uma imagem placeholder se não houver imagem na API */}
-      <View style={styles.musicaImagePlaceholder}>
-        <MusicIcon color="#fff" size={30} />
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#1DB954" />
+        <Text style={styles.loadingText}>Carregando músicas...</Text>
       </View>
-      <View style={styles.musicaInfo}>
-        <Text style={styles.musicaName}>
-          {item.titulo || item.title || item.name || "Música Desconhecida"}
-        </Text>
-        <Text style={styles.musicaDescription}>
-          {item.artista || item.artist || "Artista Desconhecido"}
-        </Text>
-        {item.estilo && <Text style={styles.musicaEstilo}>{item.estilo}</Text>}
-      </View>
-    </TouchableOpacity>
-  );
+    );
+  }
 
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={carregarMusicas}>
+          <Text style={styles.retryText}>Tentar novamente</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
   return (
     <View style={styles.container}>
-      {" "}
-      <TouchableOpacity
-        style={styles.musicaButton}
-        onPress={handleButtonPress}
-        activeOpacity={0.7}
-      >
-        {currentMusica ? (
-          isPlaying ? (
-            <PauseCircleIcon />
-          ) : (
-            <MusicIcon />
-          )
-        ) : (
-          <MusicIcon />
-        )}
-        <Text style={styles.buttonText}>
-          {currentMusica
-            ? isPlaying
-              ? `Pausar: ${
-                  currentMusica.titulo ||
-                  currentMusica.title ||
-                  currentMusica.name
-                }`
-              : `Continuar: ${
-                  currentMusica.titulo ||
-                  currentMusica.title ||
-                  currentMusica.name
-                }`
-            : "Tocar Música"}
-        </Text>
-      </TouchableOpacity>
-      {currentMusica && (
-        <TouchableOpacity
-          style={styles.nextButton}
-          onPress={playNextSong}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.nextButtonText}>Próxima música</Text>
-        </TouchableOpacity>
-      )}
-      <Modal
-        visible={modalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.header}>
-              <Text style={styles.title}>Músicas para Foco</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.closeButtonText}>X</Text>
-              </TouchableOpacity>
-            </View>
+      <Text style={styles.title}>Música para Foco</Text>
 
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#1DB954" />
-                <Text style={styles.loadingText}>Carregando músicas...</Text>
+      {musicas.length === 0 ? (
+        <Text style={styles.emptyText}>Nenhuma música disponível</Text>
+      ) : (
+        <FlatList
+          data={musicas}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[
+                styles.musicaItem,
+                currentMusica?.id === item.id
+                  ? styles.selectedMusicaItem
+                  : null,
+              ]}
+              onPress={() => playSound(item)}
+              disabled={loadingAudio}
+            >
+              <View style={styles.musicaImagePlaceholder}>
+                <Text style={styles.musicaImageText}>🎵</Text>
               </View>
-            ) : error ? (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-                <Text style={styles.errorHelpText}>
-                  {error.includes("formato")
-                    ? "Dica: Alguns formatos de áudio podem não ser compatíveis com o player. Tente converter o arquivo para MP3."
-                    : error.includes("permissão")
-                    ? "Dica: Os arquivos do Google Drive precisam ter permissão de acesso público."
-                    : "Dica: Verifique se o arquivo existe e está acessível publicamente."}
+              <View style={styles.musicaInfo}>
+                <Text style={styles.musicaName}>{item.titulo || "Música"}</Text>
+                <Text style={styles.musicaDescription}>
+                  {item.artista || "Artista"}
                 </Text>
-                <TouchableOpacity
-                  style={styles.retryButton}
-                  onPress={fetchMusicas}
-                >
-                  <Text style={styles.retryText}>Tentar novamente</Text>
-                </TouchableOpacity>
+                {item.estilo && (
+                  <Text style={styles.musicaEstilo}>{item.estilo}</Text>
+                )}
               </View>
-            ) : (
-              <FlatList
-                data={musicas}
-                keyExtractor={(item) =>
-                  item.id?.toString() || Math.random().toString()
-                }
-                renderItem={renderMusicaItem}
-                contentContainerStyle={styles.listContainer}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>
-                    Nenhuma música encontrada
-                  </Text>
-                }
-              />
-            )}
+              {loadingAudio && currentMusica?.id === item.id && (
+                <ActivityIndicator size="small" color="#1DB954" />
+              )}
+            </TouchableOpacity>
+          )}
+          contentContainerStyle={styles.listContainer}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={true}
+          style={{ flex: 1, height: "100%" }}
+        />
+      )}
+
+      {currentMusica && (
+        <View style={styles.playerContainer}>
+          <View style={styles.playerInfo}>
+            <Text style={styles.currentMusicaTitle} numberOfLines={1}>
+              {currentMusica.titulo || "Música"}
+            </Text>
+            <Text style={styles.currentMusicaArtist} numberOfLines={1}>
+              {currentMusica.artista || "Artista"}
+            </Text>
           </View>
+
+          <TouchableOpacity
+            style={[styles.playButton, playing ? styles.pauseButton : null]}
+            onPress={togglePlayPause}
+            disabled={loadingAudio}
+          >
+            {loadingAudio ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.playButtonText}>{playing ? "❚❚" : "▶"}</Text>
+            )}
+          </TouchableOpacity>
         </View>
-      </Modal>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: "100%",
+    flex: 1,
+    padding: 16,
+    backgroundColor: "#021123",
   },
-  musicaButton: {
-    backgroundColor: "#1DB954", // Mantendo a cor verde
-    padding: 12,
-    borderRadius: 32,
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "center",
-    width: "100%",
-  },
-  buttonText: {
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
     color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "600",
+    marginBottom: 16,
   },
-  nextButton: {
-    backgroundColor: "#144480", // Cor azul para diferenciar
-    padding: 8,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-    width: "100%",
-  },
-  nextButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  modalContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
-  },
-  modalContent: {
-    width: "90%",
-    maxHeight: "80%",
     backgroundColor: "#021123",
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "#144480",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#144480",
-  },
-  title: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  loadingContainer: {
-    padding: 40,
-    alignItems: "center",
   },
   loadingText: {
-    color: "#fff",
+    color: "#FFFFFF",
     marginTop: 16,
   },
   errorContainer: {
-    padding: 24,
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#021123",
+    padding: 20,
   },
   errorText: {
     color: "#ff6b6b",
     textAlign: "center",
-    marginBottom: 8,
-  },
-  errorHelpText: {
-    color: "#98A0A8",
-    textAlign: "center",
-    fontSize: 12,
     marginBottom: 16,
-    paddingHorizontal: 20,
+  },
+  retryButton: {
+    backgroundColor: "#1DB954",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
   },
   emptyText: {
     color: "#98A0A8",
     textAlign: "center",
-    padding: 20,
-  },
-  retryButton: {
-    backgroundColor: "#144480",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: "#fff",
-    fontWeight: "bold",
+    marginTop: 40,
   },
   listContainer: {
-    padding: 16,
+    paddingBottom: 100, // Espaço para o player na parte inferior
   },
   musicaItem: {
     flexDirection: "row",
@@ -412,26 +378,28 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: "#144480",
   },
-  musicaImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 4,
-    marginRight: 12,
+  selectedMusicaItem: {
+    backgroundColor: "#1E5B9F",
+    borderLeftWidth: 4,
+    borderLeftColor: "#1DB954",
   },
   musicaImagePlaceholder: {
-    width: 60,
-    height: 60,
+    width: 50,
+    height: 50,
     borderRadius: 4,
     marginRight: 12,
     backgroundColor: "#1DB954",
     justifyContent: "center",
     alignItems: "center",
   },
+  musicaImageText: {
+    fontSize: 24,
+  },
   musicaInfo: {
     flex: 1,
   },
   musicaName: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "bold",
     marginBottom: 4,
@@ -445,5 +413,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontStyle: "italic",
+  },
+  playerContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#144480",
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#1DB954",
+  },
+  playerInfo: {
+    flex: 1,
+  },
+  currentMusicaTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  currentMusicaArtist: {
+    color: "#98A0A8",
+    fontSize: 14,
+  },
+  playButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#1DB954",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pauseButton: {
+    backgroundColor: "#ff7700",
+  },
+  playButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
